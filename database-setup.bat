@@ -5,49 +5,84 @@ REM ========================================
 
 echo.
 echo ========================================
+echo VERIFICATION DU CONTENEUR ORACLE
+echo ========================================
+echo.
+
+REM Verifier que le conteneur existe
+docker inspect kolotv-db >nul 2>&1
+if errorlevel 1 (
+    echo ERREUR : Le conteneur kolotv-db n'existe pas.
+    echo Lancez d'abord : docker-compose up -d
+    pause
+    exit /b 1
+)
+
+REM Verifier que le conteneur est en cours d'execution
+docker inspect -f "{{.State.Running}}" kolotv-db 2>nul | findstr "true" >nul
+if errorlevel 1 (
+    echo ERREUR : Le conteneur kolotv-db n'est pas demarre.
+    echo Lancez : docker-compose up -d
+    pause
+    exit /b 1
+)
+
+echo Conteneur kolotv-db en cours d'execution.
+echo.
+echo Attente du demarrage complet d'Oracle (healthcheck)...
+echo Cela peut prendre jusqu'a 2 minutes...
+
+REM Attendre que le healthcheck soit "healthy"
+set /a timeout=120
+:wait_healthy
+docker inspect --format="{{.State.Health.Status}}" kolotv-db 2>nul | findstr "healthy" >nul
+if not errorlevel 1 goto :healthy
+
+timeout /t 5 /nobreak >nul
+set /a timeout-=5
+if %timeout% gtr 0 (
+    echo Attente... (%timeout% secondes restantes^)
+    goto :wait_healthy
+)
+
+echo AVERTISSEMENT : Le healthcheck n'est pas "healthy" apres 2 minutes.
+echo Tentative de connexion quand meme...
+
+:healthy
+echo Oracle est pret !
+
+echo.
+echo ========================================
 echo CREATION D'UTILISATEUR ORACLE
 echo ========================================
 echo.
 
-REM Executer les commandes SQL pour creer l'utilisateur kolo0107
-REM Utiliser le compte administrateur Oracle : system/oracle (depuis docker-compose.yml)
-docker exec -i kolotv-db sqlplus -S system/oracle@localhost:1521/EE.oracle.docker << EOF
+REM Creer un fichier SQL temporaire pour la creation d'utilisateur
+echo CREATE USER kolo0107 IDENTIFIED BY kolo0107; > %TEMP%\create_user.sql
+echo ALTER USER kolo0107 DEFAULT TABLESPACE users TEMPORARY TABLESPACE temp QUOTA UNLIMITED ON users; >> %TEMP%\create_user.sql
+echo GRANT CONNECT, RESOURCE TO kolo0107; >> %TEMP%\create_user.sql
+echo GRANT DBA TO kolo0107; >> %TEMP%\create_user.sql
+echo EXIT; >> %TEMP%\create_user.sql
 
--- Creer un nouvel utilisateur Oracle avec mot de passe "kolo0107"
-CREATE USER kolo0107 IDENTIFIED BY kolo0107;
+REM Copier le fichier SQL dans le conteneur
+docker cp %TEMP%\create_user.sql kolotv-db:/tmp/create_user.sql
 
--- Configurer l'espace disque par defaut (tablespace) et l'espace temporaire
--- users : tablespace par defaut pour les donnees
--- temp : tablespace temporaire pour les operations de tri
--- QUOTA UNLIMITED : pas de limite de stockage
-ALTER USER kolo0107 DEFAULT TABLESPACE users TEMPORARY TABLESPACE temp QUOTA UNLIMITED ON users;
+REM Executer les commandes SQL - connexion locale depuis le conteneur
+echo Creation de l'utilisateur kolo0107...
+docker exec -i kolotv-db bash -c "export ORACLE_SID=EE && sqlplus -S system/oracle < /tmp/create_user.sql"
 
--- Accorder les privileges CONNECT (connexion) et RESOURCE (creation d'objets)
-GRANT CONNECT, RESOURCE TO kolo0107;
+if errorlevel 1 (
+    echo ERREUR : Echec de la creation de l'utilisateur
+    del %TEMP%\create_user.sql >nul 2>&1
+    pause
+    exit /b 1
+)
 
--- Accorder les privileges DBA (administrateur de base de donnees)
-GRANT DBA TO kolo0107;
+REM Nettoyer les fichiers temporaires
+del %TEMP%\create_user.sql >nul 2>&1
+docker exec -i kolotv-db rm -f /tmp/create_user.sql >nul 2>&1
 
-EXIT;
-EOF
-
-echo.
-echo ========================================
-echo CONFIGURATION DU REPERTOIRE DE DUMP
-echo ========================================
-echo.
-
-REM Creer le repertoire pour les dumps via Docker
-docker exec -i kolotv-db sqlplus -S system/oracle@localhost:1521/EE.oracle.docker << EOF
-
--- Creer un repertoire logique pour stocker les fichiers d'export/import
-CREATE DIRECTORY dump_dir AS '/opt/oracle/dump';
-
--- Autoriser l'utilisateur kolo0107 a lire et ecrire dans le repertoire
-GRANT READ, WRITE ON DIRECTORY dump_dir TO kolo0107;
-
-EXIT;
-EOF
+echo Utilisateur cree avec succes.
 
 echo.
 echo ========================================
@@ -64,6 +99,37 @@ docker exec -it kolotv-db chown -R oracle:oinstall /opt/oracle/dump
 
 REM Change les permissions du repertoire (755)
 docker exec -it kolotv-db chmod -R 775 /opt/oracle/dump
+
+
+echo.
+echo ========================================
+echo CONFIGURATION DU REPERTOIRE DE DUMP
+echo ========================================
+echo.
+
+REM Creer un fichier SQL temporaire pour la configuration du repertoire dump
+echo CREATE OR REPLACE DIRECTORY dump_dir AS '/opt/oracle/dump'; > %TEMP%\create_dump_dir.sql
+echo GRANT READ, WRITE ON DIRECTORY dump_dir TO kolo0107; >> %TEMP%\create_dump_dir.sql
+echo EXIT; >> %TEMP%\create_dump_dir.sql
+
+REM Copier et executer le fichier SQL
+docker cp %TEMP%\create_dump_dir.sql kolotv-db:/tmp/create_dump_dir.sql
+echo Configuration du repertoire dump...
+docker exec -i kolotv-db bash -c "export ORACLE_SID=EE && sqlplus -S system/oracle < /tmp/create_dump_dir.sql"
+
+if errorlevel 1 (
+    echo ERREUR : Echec de la configuration du repertoire dump
+    del %TEMP%\create_dump_dir.sql >nul 2>&1
+    pause
+    exit /b 1
+)
+
+REM Nettoyer
+del %TEMP%\create_dump_dir.sql >nul 2>&1
+docker exec -i kolotv-db rm -f /tmp/create_dump_dir.sql >nul 2>&1
+
+echo Repertoire dump configure avec succes.
+
 
 echo.
 echo ========================================
@@ -104,13 +170,18 @@ echo VERIFICATION
 echo ========================================
 echo.
 
+REM Creer un fichier SQL temporaire pour la verification
+echo SELECT username, account_status FROM dba_users WHERE username = 'KOLO0107'; > %TEMP%\verify_user.sql
+echo EXIT; >> %TEMP%\verify_user.sql
+
 REM Verifier que l'utilisateur kolo0107 a bien ete cree
-docker exec -i kolotv-db sqlplus -S system/oracle@localhost:1521/EE.oracle.docker << EOF
+docker cp %TEMP%\verify_user.sql kolotv-db:/tmp/verify_user.sql
+echo Verification de l'utilisateur...
+docker exec -i kolotv-db bash -c "export ORACLE_SID=EE && sqlplus -S system/oracle < /tmp/verify_user.sql"
 
-SELECT username, account_status FROM dba_users WHERE username = 'KOLO0107';
-
-EXIT;
-EOF
+REM Nettoyer
+del %TEMP%\verify_user.sql >nul 2>&1
+docker exec -i kolotv-db rm -f /tmp/verify_user.sql >nul 2>&1
 
 echo.
 echo Setup de la base de donnees termine avec succes !

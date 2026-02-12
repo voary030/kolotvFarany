@@ -29,10 +29,8 @@ RUN wget https://download.jboss.org/wildfly/10.1.0.Final/wildfly-10.1.0.Final.zi
 # Définir WILDFLY_HOME
 ENV WILDFLY_HOME /opt/wildfly
 
-# Copier votre application WAR dans le dossier de déploiement de WildFly
-COPY ./deployments/kolotv.war $WILDFLY_HOME/standalone/deployments/kolotv.war
-
-RUN touch $WILDFLY_HOME/standalone/deployments/kolotv.war.dodeploy
+# NE PAS copier le WAR dans l'image Docker - il sera copie via deployment.bat
+# Cela evite les conflits de deploiement lors des mises a jour
 
 # Exposer les ports nécessaires
 EXPOSE 8070 9990
