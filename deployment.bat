@@ -7,7 +7,7 @@ setlocal enabledelayedexpansion
 
 echo.
 echo ========================================
-echo PREPARATION DU FICHIER WAR
+echo VERIFICATION DU CONTENEUR
 echo ========================================
 echo.
 
@@ -18,8 +18,68 @@ if not exist "deployments\kolotv.war" (
     exit /b 1
 )
 
-REM Copier le fichier WAR de l'application KoloTV depuis le repertoire local
-REM vers le conteneur Docker dans le repertoire de deploiement de Wildfly
+REM Verifier si le conteneur existe
+docker inspect kolotv-wildfly >nul 2>&1
+if errorlevel 1 (
+    echo ERREUR : Le conteneur kolotv-wildfly n'existe pas.
+    echo Lancez d'abord : docker-compose up -d
+    pause
+    exit /b 1
+)
+
+REM Verifier si le conteneur est en cours d'execution
+docker inspect -f "{{.State.Running}}" kolotv-wildfly 2>nul | findstr "true" >nul
+if errorlevel 1 (
+    echo Le conteneur kolotv-wildfly est arrete. Demarrage en cours...
+    docker start kolotv-wildfly
+    if errorlevel 1 (
+        echo ERREUR : Impossible de demarrer le conteneur.
+        pause
+        exit /b 1
+    )
+    echo Conteneur demarre. Attente du demarrage de WildFly...
+    timeout /t 15 /nobreak
+) else (
+    echo Conteneur kolotv-wildfly en cours d'execution.
+)
+
+echo.
+echo ========================================
+echo NETTOYAGE ANCIEN DEPLOIEMENT
+echo ========================================
+echo.
+
+REM Arreter WildFly proprement pour eviter les conflits de deploiement
+echo Arret de WildFly pour nettoyage...
+docker exec -i kolotv-wildfly /opt/wildfly/bin/jboss-cli.sh --connect --command="shutdown" >nul 2>&1
+timeout /t 5 /nobreak
+
+REM Supprimer les anciens fichiers de deploiement et markers pour eviter "Duplicate resource"
+echo Nettoyage des anciens fichiers de deploiement...
+docker exec kolotv-wildfly rm -f /opt/wildfly/standalone/deployments/kolotv.war >nul 2>&1
+docker exec kolotv-wildfly rm -f /opt/wildfly/standalone/deployments/kolotv.war.deployed >nul 2>&1
+docker exec kolotv-wildfly rm -f /opt/wildfly/standalone/deployments/kolotv.war.failed >nul 2>&1
+docker exec kolotv-wildfly rm -f /opt/wildfly/standalone/deployments/kolotv.war.dodeploy >nul 2>&1
+docker exec kolotv-wildfly rm -f /opt/wildfly/standalone/deployments/kolotv.war.undeployed >nul 2>&1
+docker exec kolotv-wildfly rm -f /opt/wildfly/standalone/deployments/kolotv.war.isdeploying >nul 2>&1
+
+REM Nettoyer aussi le cache de donnees standalone pour eviter les references orphelines
+docker exec kolotv-wildfly rm -rf /opt/wildfly/standalone/data/content >nul 2>&1
+docker exec kolotv-wildfly mkdir -p /opt/wildfly/standalone/data/content >nul 2>&1
+
+REM Nettoyer le fichier standalone.xml pour supprimer la reference au deploiement
+echo Nettoyage du fichier de configuration standalone.xml...
+docker exec kolotv-wildfly sed -i '/<deployment name="kolotv.war"/,/<\/deployment>/d' /opt/wildfly/standalone/configuration/standalone.xml >nul 2>&1
+
+echo Nettoyage termine.
+
+echo.
+echo ========================================
+echo COPIE DU NOUVEAU WAR
+echo ========================================
+echo.
+
+REM Copier le nouveau fichier WAR
 echo Copie du fichier WAR vers le conteneur...
 docker cp deployments\kolotv.war kolotv-wildfly:/opt/wildfly/standalone/deployments/
 
@@ -31,56 +91,60 @@ if errorlevel 1 (
 
 echo Copie reussie !
 
-REM Attendre quelques secondes pour s'assurer que la copie est complete
-echo Attente de completion de la copie...
-timeout /t 3 /nobreak
+REM Creer le marker .dodeploy pour que le deployment scanner prenne en charge le deploiement
+docker exec kolotv-wildfly sh -c "touch /opt/wildfly/standalone/deployments/kolotv.war.dodeploy"
+echo Marker de deploiement cree.
 
 echo.
 echo ========================================
-echo PRETRAITEMENT - RETRAIT ANCIENNE VERSION
+echo REDEMARRAGE DE WILDFLY
 echo ========================================
 echo.
 
-REM Verifier si une ancienne version est deployee et la retirer
-echo Verification et retrait de l'ancienne version...
-docker exec -i kolotv-wildfly /opt/wildfly/bin/jboss-cli.sh --connect --command="undeploy kolotv.war" >nul 2>&1
-
-REM Attendre un peu avant le nouveau deploiement
-timeout /t 2 /nobreak
-
-echo.
-echo ========================================
-echo DEPLOIEMENT DE L'APPLICATION
-echo ========================================
-echo.
-
-REM Deployer l'application WAR via la CLI JBoss
-REM -i : mode non-interactif pour eviter les problemes de timeout
-REM --connect : se connecter au serveur Wildfly
-REM deploy : commande de deploiement de l'application
-REM --force : force le remplacement si le fichier existe deja
-echo Deploiement de l'application en cours...
-docker exec -i kolotv-wildfly /opt/wildfly/bin/jboss-cli.sh --connect --command="deploy /opt/wildfly/standalone/deployments/kolotv.war --force"
+REM Redemarrer le conteneur pour demarrer WildFly proprement
+echo Redemarrage du conteneur...
+docker restart kolotv-wildfly
 
 if errorlevel 1 (
-    echo ATTENTION : Verification de l'etat du deploiement requise
-) else (
-    echo Deploiement reussi !
+    echo ERREUR : Impossible de redemarrer le conteneur
+    pause
+    exit /b 1
 )
 
+REM Attendre que WildFly demarre completement
+echo Attente du demarrage de WildFly (30 secondes)...
+timeout /t 30 /nobreak
+
 echo.
 echo ========================================
-echo OPTIONS SUPPLEMENTAIRES
+echo VERIFICATION DU DEPLOIEMENT
 echo ========================================
-echo.
-echo Pour RETIRER l'application (si necessaire), executez :
-echo docker exec kolotv-wildfly /opt/wildfly/bin/jboss-cli.sh --connect --command="undeploy kolotv.war"
 echo.
 
-REM Menu d'options
+REM Verifier si le deploiement a reussi via les markers
+docker exec kolotv-wildfly sh -c "test -f /opt/wildfly/standalone/deployments/kolotv.war.deployed" >nul 2>&1
+if not errorlevel 1 (
+    echo [OK] Application kolotv.war deployee avec succes !
+    goto :menu
+)
+
+docker exec kolotv-wildfly sh -c "test -f /opt/wildfly/standalone/deployments/kolotv.war.failed" >nul 2>&1
+if not errorlevel 1 (
+    echo [ERREUR] Le deploiement a echoue. Consultez les logs :
+    echo docker logs kolotv-wildfly --tail 50
+    goto :menu
+)
+
+echo [INFO] Deploiement en cours ou etat inconnu. Verifiez les logs :
+echo docker logs kolotv-wildfly --tail 50
+
+:menu
 echo.
-echo Choisissez une action :
-echo 1. Retirer/redéployer l'application
+echo ========================================
+echo OPTIONS
+echo ========================================
+echo.
+echo 1. Voir les logs WildFly
 echo 2. Verifier l'etat de deploiement
 echo 3. Quitter
 echo.
@@ -88,20 +152,20 @@ set /p choice="Entrez votre choix (1/2/3) : "
 
 if "%choice%"=="1" (
     echo.
-    echo Retrait de l'ancienne version...
-    docker exec -i kolotv-wildfly /opt/wildfly/bin/jboss-cli.sh --connect --command="undeploy kolotv.war" 2>nul
-    timeout /t 2 /nobreak
-    echo Deploiement de la nouvelle version...
-    docker exec -i kolotv-wildfly /opt/wildfly/bin/jboss-cli.sh --connect --command="deploy /opt/wildfly/standalone/deployments/kolotv.war --force"
-    echo Application redéployée avec succès !
+    docker logs kolotv-wildfly --tail 80
     pause
+    goto :menu
 )
 
 if "%choice%"=="2" (
     echo.
-    echo Verification de l'etat du conteneur Wildfly...
-    docker exec kolotv-wildfly /opt/wildfly/bin/jboss-cli.sh --connect --command="ls deployment"
+    echo Verification des markers de deploiement...
+    docker exec kolotv-wildfly ls -la /opt/wildfly/standalone/deployments/kolotv.war*
+    echo.
+    echo Verification via CLI...
+    docker exec -i kolotv-wildfly /opt/wildfly/bin/jboss-cli.sh --connect --command="ls deployment" 2>nul
     pause
+    goto :menu
 )
 
 echo.

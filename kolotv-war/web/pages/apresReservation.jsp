@@ -106,10 +106,29 @@
     Reservation cmere = (Reservation) p.getObjectAvecValeur();
     ReservationDetailsGroupe [] cfille = (ReservationDetailsGroupe[]) p.getObjectFilleAvecValeur();
     List<ReservationDetails> listeFille = new ArrayList<>();
-    for (int i = 0; i < cfille.length; i++) {
-        cfille[i].setOrdre(i+1);
-        ReservationDetails [] rsdt = cfille[i].genererReservationDetails();
-        listeFille.addAll(Arrays.asList(rsdt));
+    String idSupport = cmere.getIdSupport();
+    String idClient = cmere.getIdclient();
+    java.sql.Connection conn = null;
+    try {
+        conn = new utilitaire.UtilDB().GetConn();
+        for (int i = 0; i < cfille.length; i++) {
+            cfille[i].setOrdre(i+1);
+            ReservationDetails[] rsdt;
+            // Si nbspot > 0, utiliser nbspot comme nombre de diffusions avec gestion des conflits
+            // Le champ nbspot (Quantité) sert de nombre de diffusions
+            int nbDiff = cfille[i].getNbspot();
+            
+            if (nbDiff > 0 && cfille[i].getDatedebut() != null && cfille[i].getDatefin() != null) {
+                // Utiliser nbspot comme nombre de diffusions avec gestion des conflits
+                cfille[i].setNbDiffusion(nbDiff);
+                rsdt = cfille[i].genererReservationDetailsAvecNbDiffusion(idSupport, idClient, conn);
+            } else {
+                rsdt = cfille[i].genererReservationDetails();
+            }
+            listeFille.addAll(Arrays.asList(rsdt));
+        }
+    } finally {
+        if (conn != null) conn.close();
     }
     ClassMAPTable o = (ClassMAPTable) u.createObjectMultiple(cmere, colonneMere, listeFille.toArray(new ReservationDetails[]{}));
     temp = (Object) o;

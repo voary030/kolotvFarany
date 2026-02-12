@@ -113,7 +113,7 @@
     pi.getFormufle().getChamp("datefin_0").setLibelle("Date de fin");
     pi.getFormufle().getChamp("heure_0").setLibelle("Heure");
     pi.getFormufle().getChamp("duree_0").setLibelle("Dur&eacute;e");
-    pi.getFormufle().getChamp("nbspot_0").setLibelle("Quantite");
+    pi.getFormufle().getChamp("nbspot_0").setLibelle("Nb Diffusions");
     affichage.Champ[] liste = new affichage.Champ[1];
     Support typeMed= new Support();
     liste[0] = new Liste("idSupport", typeMed, "val", "id");
