@@ -1,0 +1,7 @@
+sqlplus system/Dbamanager1
+
+create directory export_20260122 as 'F:\Tsiky\ITU\L3\S5-ArchitectureLogicielle\kolotv\bdd\dmp';
+
+grant read, write on directory export_20260122 to kolotv;
+
+imp kolotv/kolotv@//localhost:1521/orcl file=F:\Tsiky\ITU\L3\S5-ArchitectureLogicielle\kolotv\bdd\dmp\export_20260122.dmp log=export_20260122.log fromuser=kolotv touser=kolotv

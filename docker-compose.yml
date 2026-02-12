@@ -1,0 +1,51 @@
+# version: "3.9"
+
+services:
+  oracle:
+    image: loliconneko/oracle-ee-11g
+    container_name: kolotv-db
+    environment:
+      ORACLE_ALLOW_REMOTE: "yes"
+      ORACLE_DISABLE_ASYNCH_IO: "true"
+      ORACLE_PASSWORD: oracle
+      NLS_LANG: FRENCH_FRANCE.AL32UTF8
+      NLS_DATE_FORMAT: "DD/MM/YYYY"
+      NLS_TIMESTAMP_FORMAT: "DD/MM/YYYY HH24:MI:SS"
+    ports:
+      - "1521:1521"
+    volumes:
+      - oracle-data:/opt/oracle/oradata
+      - ./init-user.sql:/docker-entrypoint-initdb.d/init-user.sql
+    networks:
+      - kolotv-net
+    healthcheck:
+      test: ["CMD-SHELL", "echo 'SELECT 1 FROM DUAL;' | sqlplus -s system/oracle@localhost:1521/EE.oracle.docker || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+
+  kolotv-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kolotv-wildfly
+    depends_on:
+      oracle:
+        condition: service_healthy
+    environment:
+      NLS_LANG: FRENCH_FRANCE.AL32UTF8
+      NLS_DATE_FORMAT: "DD/MM/YYYY"
+      NLS_TIMESTAMP_FORMAT: "DD/MM/YYYY HH24:MI:SS"
+      TZ: Indian/Antananarivo
+      LANG: fr_FR.UTF-8
+    ports:
+      - "8080:8080"
+    networks:
+      - kolotv-net
+
+networks:
+  kolotv-net:
+
+volumes:
+  oracle-data:

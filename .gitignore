@@ -1,0 +1,29 @@
+# Build outputs
+build-file/
+deployments/
+*.war
+*.jar
+*.ear
+*.class
+
+# IDE files
+.idea/
+**/*.iml
+.settings/
+*.classpath
+*.project
+kolotv-ejb/nbproject/
+
+# Build directories
+kolotv-ejb/build/
+kolotv-war/build/
+
+# Database dumps
+*.dmp
+*.log
+
+# Generated files
+kolotv-war/web/dateBuild.txt
+
+# Scripts locaux
+import-db.bat

@@ -1,0 +1,68 @@
+-- ========================================
+-- CRÉATION D'UTILISATEUR ORACLE
+-- ========================================
+
+-- Créer un nouvel utilisateur Oracle avec mot de passe "kolo0107"
+CREATE USER kolo0107 IDENTIFIED BY kolo0107;
+
+-- Configurer l'espace disque par défaut (tablespace) et l'espace temporaire pour cet utilisateur
+-- users : tablespace par défaut pour les données
+-- temp : tablespace temporaire pour les opérations de tri/tri
+-- QUOTA UNLIMITED : pas de limite de stockage
+ALTER USER kolo0107 DEFAULT TABLESPACE users TEMPORARY TABLESPACE temp QUOTA UNLIMITED ON users;
+
+-- Accorder les privilèges CONNECT (connexion) et RESOURCE (création d'objets) à l'utilisateur
+GRANT CONNECT, RESOURCE TO kolo0107;
+
+-- Accorder les privilèges DBA (administrateur de base de données) - complet accès
+GRANT DBA TO kolo0107;  
+
+-- ========================================
+-- CONFIGURATION DU RÉPERTOIRE DE DUMP
+-- ========================================
+
+-- Créer un répertoire logique pour stocker les fichiers d'export/import de la base de données
+CREATE DIRECTORY dump_dir AS '/opt/oracle/dump';
+
+-- Autoriser l'utilisateur kolo0107 à lire et écrite dans le répertoire dump_dir
+GRANT READ, WRITE ON DIRECTORY dump_dir TO kolo0107;
+
+-- ========================================
+-- IMPORT/EXPORT DE DONNÉES
+-- ========================================
+
+-- Copier le fichier dump/export (export_20260122.dmp) du répertoire local
+-- vers le conteneur Docker dans le répertoire /opt/oracle/dump/
+docker cp export_20260122.dmp kolotv-db:/opt/oracle/dump/export.dmp
+
+-- Importer les données depuis le fichier dump
+-- FILE : chemin du fichier dump à importer
+-- LOG : fichier journal pour tracer les erreurs/succès
+-- FULL=Y : importer la base de données complète (tous les objets, toutes les données)
+imp kolo0107/kolo0107 \
+FILE=/opt/oracle/dump/export.dmp \
+LOG=/opt/oracle/dump/import5.log \
+FULL=Y
+
+-- ========================================
+-- GESTION DES PERMISSIONS SYSTÈME
+-- ========================================
+
+-- Change propriétaire du répertoire dump et tous ses fichiers vers oracle:oinstall
+-- Cela permet au processus Oracle d'accéder aux fichiers
+sh-4.2# chown -R oracle:oinstall /opt/oracle/dump
+
+-- Change les permissions du répertoire : lecture, écriture, exécution pour propriétaire, groupe et autres
+sh-4.2# chmod -R 775 /opt/oracle/dump
+
+-- ========================================
+-- DÉPANNAGE DES PORTS
+-- ========================================
+
+-- Affiche les connexions réseau actives et cherche le port 8080
+-- Retourne le PID (Process ID) du processus écoutant sur le port 8080
+netstat -ano | findstr :8080
+
+-- Termine/tue le processus avec le PID trouvé (remplacer 4844 par le PID réel)
+-- /F : force kill (arrêt forcé)
+taskkill /PID 4844 /F

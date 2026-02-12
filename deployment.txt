@@ -1,0 +1,38 @@
+-- ========================================
+-- DÉPLOIEMENT KOLOTV - WILDFLY
+-- ========================================
+
+-- ========================================
+-- PRÉPARATION DU FICHIER WAR
+-- ========================================
+
+-- Copier le fichier WAR (Web Application Archive) de l'application KoloTV
+-- depuis le répertoire local "deployments/" vers le conteneur Docker
+-- dans le répertoire de déploiement de Wildfly
+docker cp deployments/kolotv.war kolotv-wildfly:/opt/wildfly/standalone/deployments/
+
+-- ========================================
+-- DÉPLOIEMENT DE L'APPLICATION
+-- ========================================
+
+-- Déployer l'application WAR via la CLI JBoss
+-- -it : mode interactif avec terminal
+-- --connect : se connecter au serveur Wildfly
+-- deploy : commande de déploiement de l'application
+docker exec -it kototv-wildfly /opt/wildfly/bin/jboss-cli.sh --connect --command="deploy /opt/jboss/wildfly/standalone/deployments/kolotv.war"
+
+-- ========================================
+-- RETRAIT DE L'APPLICATION (si nécessaire)
+-- ========================================
+
+-- Retirer/dé-déployer l'application WAR (utile pour redéployer une version)
+-- undeploy : supprime l'application du serveur sans supprimer le fichier WAR
+docker exec kototv-wildfly /opt/jboss/wildfly/bin/jboss-cli.sh --connect --command="undeploy kolotv.war"
+
+-- ========================================
+-- CONFIGURATION JAVA
+-- ========================================
+
+-- Changer la version Java utilisée par défaut sur le système
+-- Affiche les versions Java disponibles et permet d'en choisir une
+update-alternatives --config java

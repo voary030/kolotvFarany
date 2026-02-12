@@ -1,0 +1,7 @@
+sqlplus system/Dbamanager1
+
+create directory kolo as 'F:\Tsiky\ITU\L3\S5-ArchitectureLogicielle\kolotv\bdd\dmp2';
+
+grant read, write on directory kolo to kolotv;
+
+imp kolotv/kolotv@//localhost:1521/orcl file=F:\Tsiky\ITU\L3\S5-ArchitectureLogicielle\kolotv\bdd\dmp2\kolo.dmp log=kolo.log fromuser=kolotv1203 touser=kolotv

@@ -1,0 +1,8 @@
+CREATE  TABLE USERHOMEPAGE ( 
+	ID                   VARCHAR2(50)   NOT NULL,
+	CODESERVICE          VARCHAR2(50)   ,
+	CODEDIR              VARCHAR2(50)   ,
+	IDROLE               VARCHAR2(50)   ,
+	URLPAGE              VARCHAR2(500)   ,
+	CONSTRAINT USERHOMEPAGE_PK PRIMARY KEY ( ID ) 
+ );
